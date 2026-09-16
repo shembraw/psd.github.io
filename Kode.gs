@@ -3,8 +3,8 @@
  * Google Apps Script - Code.gs
  ******************************************************/
 
-const SPREADSHEET_ID = 'GANTI_DENGAN_ID_GOOGLE_SHEET';
-const SHEET_NAME = 'Sheet1';
+const SPREADSHEET_ID = '1Mb2HKjsJhkMizockGVczDhGmgujH1QcHU_Ub_2buwLE';
+const SHEET_NAME = 'Data_Realisasi';
 
 /*
  * GANTI PASSWORD ADMIN DI SINI.
