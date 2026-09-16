@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Informasi Realisasi Kegiatan Pembinaan SD</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    [x-cloak]{display:none!important}
+    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    @media print{
+      .no-print{display:none!important}
+      body{background:#fff!important}
+      .print-area{box-shadow:none!important;border:0!important}
+      @page{size:A4 landscape;margin:12mm}
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800" x-data="app()" x-init="init()">
+
+<div x-cloak x-show="loading" class="fixed inset-0 z-[100] bg-slate-950/30 backdrop-blur-sm flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-2xl px-6 py-5 flex items-center gap-4">
+    <div class="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+    <div><div class="font-bold">Memproses...</div><div class="text-sm text-slate-500">Sinkronisasi dengan Google Sheets</div></div>
+  </div>
+</div>
+
+<div x-cloak x-show="toast.show" x-transition class="fixed right-4 top-4 z-[110] max-w-sm">
+  <div class="rounded-xl px-4 py-3 shadow-xl text-white" :class="toast.type==='success'?'bg-emerald-600':'bg-rose-600'">
+    <div class="font-semibold" x-text="toast.message"></div>
+  </div>
+</div>
+
+<!-- LOGIN -->
+<div x-cloak x-show="showLogin" class="fixed inset-0 z-[90] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-7">
+    <div class="w-14 h-14 rounded-2xl bg-indigo-100 text-indigo-700 grid place-items-center mb-4">
+      <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-7a2 2 0 00-2-2H6a2 2 0 00-2 2v7a2 2 0 002 2zm3-11V7a3 3 0 016 0v1"/></svg>
+    </div>
+    <h2 class="text-2xl font-bold">Login Administrator</h2>
+    <p class="text-sm text-slate-500 mt-1 mb-6">Menu input, edit, dan hapus hanya tersedia untuk administrator.</p>
+    <form @submit.prevent="login()">
+      <label class="block text-sm font-semibold mb-2">Password Admin</label>
+      <input x-model="loginPassword" type="password" autocomplete="current-password" class="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Masukkan password">
+      <p x-show="loginError" x-text="loginError" class="text-sm text-rose-600 mt-2"></p>
+      <div class="flex gap-3 mt-6">
+        <button type="button" @click="showLogin=false" class="flex-1 rounded-xl border border-slate-300 py-3 font-semibold">Batal</button>
+        <button class="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white py-3 font-semibold">Masuk</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div x-cloak x-show="showConfig" class="fixed inset-0 z-[80] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg p-7">
+    <h2 class="text-xl font-bold">Konfigurasi API</h2>
+    <p class="text-sm text-slate-500 mt-1">Masukkan URL Web App Google Apps Script yang berakhiran <b>/exec</b>.</p>
+    <input x-model="apiUrlDraft" class="mt-5 w-full rounded-xl border border-slate-300 px-4 py-3 font-mono text-sm" placeholder="https://script.google.com/macros/s/.../exec">
+    <div class="flex gap-3 mt-6">
+      <button @click="showConfig=false" class="flex-1 rounded-xl border py-3 font-semibold">Batal</button>
+      <button @click="saveConfig()" class="flex-1 rounded-xl bg-indigo-600 text-white py-3 font-semibold">Simpan & Sinkronkan</button>
+    </div>
+  </div>
+</div>
+
+<!-- FORM -->
+<div x-cloak x-show="showForm" class="fixed inset-0 z-[80] bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+  <div class="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto p-7">
+    <div class="flex justify-between items-start gap-4">
+      <div><h2 class="text-xl font-bold" x-text="editing?'Edit Data':'Input Data Baru'"></h2><p class="text-sm text-slate-500">Semua perubahan tersimpan ke Google Sheets.</p></div>
+      <button @click="closeForm()" class="text-slate-400 hover:text-slate-700 text-2xl">×</button>
+    </div>
+    <form @submit.prevent="saveData()" class="grid sm:grid-cols-2 gap-4 mt-6">
+      <div><label class="text-sm font-semibold">Kode Rek *</label><input x-model="form.Kode_Rek" required class="mt-1 w-full rounded-xl border px-4 py-3"></div>
+      <div><label class="text-sm font-semibold">Kategori *</label><select x-model="form.Kategori" required class="mt-1 w-full rounded-xl border px-4 py-3"><option value="">Pilih</option><option>Sosbud</option><option>Sarpras</option></select></div>
+      <div class="sm:col-span-2"><label class="text-sm font-semibold">Sub Kegiatan *</label><input x-model="form.Sub_Kegiatan" required class="mt-1 w-full rounded-xl border px-4 py-3"></div>
+      <div><label class="text-sm font-semibold">Pagu Anggaran *</label><input x-model.number="form.Pagu_Anggaran" type="number" min="0" step="0.01" required class="mt-1 w-full rounded-xl border px-4 py-3"></div>
+      <div><label class="text-sm font-semibold">Realisasi Keuangan *</label><input x-model.number="form.Realisasi_Keuangan" type="number" min="0" step="0.01" required class="mt-1 w-full rounded-xl border px-4 py-3"></div>
+      <div><label class="text-sm font-semibold">Realisasi Fisik (%) *</label><input x-model.number="form.Realisasi_Fisik" type="number" min="0" max="100" step="0.01" required class="mt-1 w-full rounded-xl border px-4 py-3"></div>
+      <div class="sm:col-span-2 rounded-xl bg-slate-50 p-4"><span class="text-sm text-slate-500">Sisa Anggaran (otomatis)</span><div class="text-xl font-bold text-indigo-700" x-text="rupiah(Number(form.Pagu_Anggaran||0)-Number(form.Realisasi_Keuangan||0))"></div></div>
+      <div class="sm:col-span-2 flex gap-3 justify-end"><button type="button" @click="closeForm()" class="px-5 py-3 rounded-xl border font-semibold">Batal</button><button class="px-5 py-3 rounded-xl bg-indigo-600 text-white font-semibold" x-text="editing?'Perbarui':'Simpan'"></button></div>
+    </form>
+  </div>
+</div>
+
+<header class="no-print sticky top-0 z-40 bg-slate-900 text-white shadow-lg">
+  <div class="max-w-7xl mx-auto px-4 lg:px-6">
+    <div class="min-h-16 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-indigo-500 grid place-items-center font-black">SD</div>
+        <div class="min-w-0">
+          <div class="font-bold truncate" x-text="title"></div>
+          <div class="text-xs text-slate-400">Sistem informasi & monitoring realisasi</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button @click="active='dashboard'" class="px-3 py-2 rounded-lg" :class="active==='dashboard'?'bg-white/10':'hover:bg-white/10'">Dashboard</button>
+        <button @click="active='data'" class="px-3 py-2 rounded-lg" :class="active==='data'?'bg-white/10':'hover:bg-white/10'">Data Kegiatan</button>
+        <button x-show="isAdmin" @click="openForm()" class="px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-400">+ Input</button>
+        <button x-show="isAdmin" @click="logout()" class="px-3 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200">Logout</button>
+        <button x-show="!isAdmin" @click="showLogin=true;loginError=''" class="px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold">Login Admin</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto p-4 lg:p-6">
+  <section class="no-print mb-6">
+    <div class="rounded-3xl bg-gradient-to-br from-slate-900 to-indigo-900 text-white p-6 lg:p-8 shadow-xl">
+      <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+        <div>
+          <div class="text-indigo-200 text-sm font-semibold">DASHBOARD PEMBINAAN SD</div>
+          <h1 class="text-2xl lg:text-4xl font-black mt-2" x-text="title"></h1>
+          <p class="text-slate-300 mt-2 max-w-2xl">Pantau pagu, realisasi keuangan, realisasi fisik, dan sisa anggaran secara ringkas.</p>
+        </div>
+        <div class="flex gap-2">
+          <button @click="editTitle()" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20">Ubah Judul</button>
+          <button @click="showConfig=true;apiUrlDraft=apiUrl" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20">API Setting</button>
+          <button @click="loadData()" class="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20">↻ Sinkronkan</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-2xl shadow-sm border p-5"><div class="text-sm text-slate-500">Total Data</div><div class="text-2xl font-black mt-1" x-text="filtered.length"></div></div>
+    <div class="bg-white rounded-2xl shadow-sm border p-5"><div class="text-sm text-slate-500">Total Pagu</div><div class="text-xl lg:text-2xl font-black mt-1" x-text="rupiah(sum('Pagu_Anggaran'))"></div></div>
+    <div class="bg-white rounded-2xl shadow-sm border p-5"><div class="text-sm text-slate-500">Realisasi Keuangan</div><div class="text-xl lg:text-2xl font-black mt-1 text-indigo-700" x-text="rupiah(sum('Realisasi_Keuangan'))"></div></div>
+    <div class="bg-white rounded-2xl shadow-sm border p-5"><div class="text-sm text-slate-500">Realisasi Fisik</div><div class="text-2xl font-black mt-1 text-emerald-600" x-text="percent(avg('Realisasi_Fisik'))"></div></div>
+  </section>
+
+  <section x-show="active==='dashboard'" x-transition class="grid lg:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-2xl shadow-sm border p-5">
+      <div class="flex justify-between"><div><h2 class="font-bold text-lg">Realisasi Keuangan</h2><p class="text-sm text-slate-500">Perbandingan pagu dan realisasi</p></div></div>
+      <div class="h-72 mt-4"><canvas id="financeChart"></canvas></div>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border p-5">
+      <h2 class="font-bold text-lg">Data Berdasarkan Kategori</h2><p class="text-sm text-slate-500">Distribusi Sosbud dan Sarpras</p>
+      <div class="h-72 mt-4"><canvas id="categoryChart"></canvas></div>
+    </div>
+  </section>
+
+  <section x-show="active==='data' || active==='dashboard'" class="bg-white rounded-2xl shadow-sm border print-area overflow-hidden">
+    <div class="no-print p-5 border-b flex flex-col lg:flex-row gap-3 justify-between">
+      <div><h2 class="text-lg font-bold">Tabel Realisasi Kegiatan</h2><p class="text-sm text-slate-500">Pencarian dan filter berjalan tanpa reload.</p></div>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <input x-model="search" class="rounded-xl border px-4 py-2 min-w-64" placeholder="Cari kode / kegiatan / kategori...">
+        <select x-model="categoryFilter" class="rounded-xl border px-4 py-2"><option value="">Semua kategori</option><option>Sosbud</option><option>Sarpras</option></select>
+        <button @click="printTable()" class="rounded-xl bg-slate-800 text-white px-4 py-2 font-semibold">Cetak / PDF</button>
+      </div>
+    </div>
+    <div class="hidden print:block p-4">
+      <h1 class="text-2xl font-bold" x-text="title"></h1><p class="text-sm">Laporan Realisasi Kegiatan Pembinaan SD</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-slate-600">
+          <tr>
+            <th class="px-4 py-3 text-left">No</th><th class="px-4 py-3 text-left">Kode Rek</th><th class="px-4 py-3 text-left">Sub Kegiatan</th><th class="px-4 py-3 text-left">Kategori</th>
+            <th class="px-4 py-3 text-right">Pagu</th><th class="px-4 py-3 text-right">Realisasi Keuangan</th><th class="px-4 py-3 text-right">Fisik</th><th class="px-4 py-3 text-right">Sisa</th>
+            <th class="no-print px-4 py-3 text-center" x-show="isAdmin">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <template x-for="(row,i) in filtered" :key="row._row">
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3" x-text="i+1"></td><td class="px-4 py-3 font-semibold" x-text="row.Kode_Rek"></td><td class="px-4 py-3" x-text="row.Sub_Kegiatan"></td>
+              <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs font-semibold" :class="row.Kategori==='Sosbud'?'bg-indigo-100 text-indigo-700':'bg-amber-100 text-amber-700'" x-text="row.Kategori"></span></td>
+              <td class="px-4 py-3 text-right" x-text="rupiah(row.Pagu_Anggaran)"></td><td class="px-4 py-3 text-right" x-text="rupiah(row.Realisasi_Keuangan)"></td><td class="px-4 py-3 text-right" x-text="percent(row.Realisasi_Fisik)"></td><td class="px-4 py-3 text-right font-semibold" x-text="rupiah(row.Sisa_Anggaran)"></td>
+              <td class="no-print px-4 py-3" x-show="isAdmin"><div class="flex justify-center gap-2"><button @click="openForm(row)" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700">Edit</button><button @click="deleteData(row)" class="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700">Hapus</button></div></td>
+            </tr>
+          </template>
+          <tr x-show="filtered.length===0"><td :colspan="isAdmin?9:8" class="px-4 py-12 text-center text-slate-500">Tidak ada data.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+function app(){
+  return {
+    apiUrl: localStorage.getItem('si_realisasi_api') || '',
+    apiUrlDraft:'',
+    title: localStorage.getItem('si_realisasi_title') || 'Sistem Informasi Realisasi Kegiatan Pembinaan SD',
+    data:[],
+    active:'dashboard',
+    search:'',
+    categoryFilter:'',
+    isAdmin:localStorage.getItem('si_realisasi_admin')==='1',
+    token:localStorage.getItem('si_realisasi_token')||'',
+    showLogin:false, showConfig:false, showForm:false,
+    loginPassword:'', loginError:'', loading:false, editing:false,
+    form:{Kode_Rek:'',Sub_Kegiatan:'',Kategori:'',Pagu_Anggaran:0,Realisasi_Keuangan:0,Realisasi_Fisik:0,Sisa_Anggaran:0},
+    toast:{show:false,message:'',type:'success'},
+    financeChart:null, categoryChart:null,
+
+    async init(){
+      this.apiUrlDraft=this.apiUrl;
+      if(!this.apiUrl) this.showConfig=true;
+      await this.loadData();
+    },
+
+    get filtered(){
+      const q=this.search.toLowerCase().trim();
+      return this.data.filter(r=>{
+        const text=[r.Kode_Rek,r.Sub_Kegiatan,r.Kategori].join(' ').toLowerCase();
+        return (!q || text.includes(q)) && (!this.categoryFilter || r.Kategori===this.categoryFilter);
+      });
+    },
+
+    num(v){ const n=Number(v); return Number.isFinite(n)?n:0 },
+    rupiah(v){ return new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(this.num(v)) },
+    percent(v){ return this.num(v).toLocaleString('id-ID',{maximumFractionDigits:2})+'%' },
+    sum(key){ return this.filtered.reduce((a,r)=>a+this.num(r[key]),0) },
+    avg(key){ return this.filtered.length ? this.sum(key)/this.filtered.length : 0 },
+
+    toastMsg(message,type='success'){
+      this.toast={show:true,message,type};
+      setTimeout(()=>this.toast.show=false,3500);
+    },
+
+    async request(payload){
+      if(!this.apiUrl) throw new Error('URL API belum dikonfigurasi.');
+      const res=await fetch(this.apiUrl,{
+        method:'POST',redirect:'follow',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify(payload)
+      });
+      const text=await res.text();
+      let json;
+      try{ json=JSON.parse(text) }
+      catch(e){
+        console.error('Raw response:',text);
+        throw new Error('Endpoint API mengembalikan HTML, bukan JSON. Pastikan URL adalah Web App GAS yang berakhiran /exec dan deployment sudah diperbarui.');
+      }
+      return json;
+    },
+
+    async loadData(){
+      if(!this.apiUrl) return;
+      this.loading=true;
+      try{
+        const res=await fetch(this.apiUrl+'?action=getData',{redirect:'follow',cache:'no-store'});
+        const text=await res.text();
+        let json;
+        try{json=JSON.parse(text)}catch(e){throw new Error('GET API tidak mengembalikan JSON. Periksa URL /exec dan deployment GAS.')}
+        if(!json.success) throw new Error(json.message||'Gagal mengambil data.');
+        this.data=Array.isArray(json.data)?json.data:[];
+        this.$nextTick(()=>this.renderCharts());
+      }catch(e){this.toastMsg(e.message,'error')}
+      finally{this.loading=false}
+    },
+
+    async login(){
+      this.loading=true; this.loginError='';
+      try{
+        const res=await this.request({action:'login',password:this.loginPassword});
+        if(!res.success) throw new Error(res.message||'Login gagal.');
+        this.token=res.token;
+        this.isAdmin=true;
+        localStorage.setItem('si_realisasi_token',this.token);
+        localStorage.setItem('si_realisasi_admin','1');
+        this.loginPassword=''; this.showLogin=false;
+        this.toastMsg('Login admin berhasil.');
+      }catch(e){this.loginError=e.message;this.toastMsg(e.message,'error')}
+      finally{this.loading=false}
+    },
+
+    async logout(){
+      try{if(this.token) await this.request({action:'logout',token:this.token})}catch(e){}
+      this.token='';this.isAdmin=false;
+      localStorage.removeItem('si_realisasi_token');localStorage.removeItem('si_realisasi_admin');
+      this.toastMsg('Anda telah logout.');
+    },
+
+    saveConfig(){
+      const url=this.apiUrlDraft.trim();
+      if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){
+        this.toastMsg('URL harus berupa Web App GAS yang berakhiran /exec.','error');return;
+      }
+      this.apiUrl=url;localStorage.setItem('si_realisasi_api',url);this.showConfig=false;this.loadData();
+    },
+
+    editTitle(){
+      const t=prompt('Masukkan judul aplikasi:',this.title);
+      if(t!==null && t.trim()){this.title=t.trim();localStorage.setItem('si_realisasi_title',this.title)}
+    },
+
+    emptyForm(){return {Kode_Rek:'',Sub_Kegiatan:'',Kategori:'',Pagu_Anggaran:0,Realisasi_Keuangan:0,Realisasi_Fisik:0,Sisa_Anggaran:0}},
+    openForm(row=null){
+      if(!this.isAdmin){this.showLogin=true;return}
+      this.editing=!!row;
+      this.form=row?{...row}:this.emptyForm();
+      this.showForm=true;
+    },
+    closeForm(){this.showForm=false;this.editing=false},
+
+    async saveData(){
+      if(!this.isAdmin||!this.token){this.showLogin=true;return}
+      const f=this.form;
+      if(!f.Kode_Rek.trim()||!f.Sub_Kegiatan.trim()||!f.Kategori){this.toastMsg('Lengkapi semua field wajib.','error');return}
+      if(this.num(f.Realisasi_Keuangan)>this.num(f.Pagu_Anggaran)){this.toastMsg('Realisasi keuangan tidak boleh melebihi pagu.','error');return}
+      if(this.num(f.Realisasi_Fisik)<0||this.num(f.Realisasi_Fisik)>100){this.toastMsg('Realisasi fisik harus 0–100%.','error');return}
+      this.loading=true;
+      try{
+        const payload={...f,action:this.editing?'update':'insert',token:this.token};
+        const res=await this.request(payload);
+        if(res.authenticated===false){await this.logout();throw new Error('Sesi admin tidak valid. Silakan login kembali.')}
+        if(!res.success) throw new Error(res.message||'Operasi gagal.');
+        this.closeForm();this.toastMsg(res.message||'Berhasil.');await this.loadData();
+      }catch(e){this.toastMsg(e.message,'error')}
+      finally{this.loading=false}
+    },
+
+    async deleteData(row){
+      if(!confirm('Hapus data '+row.Sub_Kegiatan+'? Tindakan ini tidak dapat dibatalkan.'))return;
+      this.loading=true;
+      try{
+        const res=await this.request({action:'delete',token:this.token,_row:row._row});
+        if(res.authenticated===false){await this.logout();throw new Error('Sesi admin tidak valid.')}
+        if(!res.success)throw new Error(res.message||'Gagal menghapus.');
+        this.toastMsg(res.message||'Data dihapus.');await this.loadData();
+      }catch(e){this.toastMsg(e.message,'error')}
+      finally{this.loading=false}
+    },
+
+    renderCharts(){
+      if(typeof Chart==='undefined')return;
+      const labels=['Pagu','Realisasi'];
+      const finance=[this.sum('Pagu_Anggaran'),this.sum('Realisasi_Keuangan')];
+      if(this.financeChart)this.financeChart.destroy();
+      this.financeChart=new Chart(document.getElementById('financeChart'),{
+        type:'bar',data:{labels,datasets:[{label:'Rupiah',data:finance,borderRadius:8}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('id-ID',{notation:'compact'}).format(v)}}}}
+      });
+      const cats=['Sosbud','Sarpras'];
+      const counts=cats.map(c=>this.filtered.filter(r=>r.Kategori===c).length);
+      if(this.categoryChart)this.categoryChart.destroy();
+      this.categoryChart=new Chart(document.getElementById('categoryChart'),{
+        type:'doughnut',data:{labels:cats,datasets:[{data:counts}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}
+      });
+    },
+
+    printTable(){
+      window.print();
+    }
+  }
+}
+</script>
+</body>
+</html>
